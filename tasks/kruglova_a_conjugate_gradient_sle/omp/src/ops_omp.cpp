@@ -10,12 +10,11 @@ namespace kruglova_a_conjugate_gradient_sle {
 
 namespace {
 void MatrixVectorMultiply(const std::vector<double> &a, const std::vector<double> &p, std::vector<double> &ap, int n) {
-  // Основная вычислительно-ёмкая операция — распараллеливаем по строкам
-#pragma omp parallel for
+#pragma omp parallel for default(none) shared(a, p, ap, n)
   for (int i = 0; i < n; ++i) {
     ap[i] = 0.0;
     for (int j = 0; j < n; ++j) {
-      ap[i] += a[static_cast<size_t>(i) * n + j] * p[j];
+      ap[i] += a[(static_cast<size_t>(i) * n) + j] * p[j];
     }
   }
 }
@@ -56,7 +55,7 @@ bool KruglovaAConjGradSleOMP::RunImpl() {
   std::vector<double> ap(n, 0.0);
 
   double rsold = 0.0;
-#pragma omp parallel for reduction(+ : rsold)
+#pragma omp parallel for default(none) shared(r, n) reduction(+ : rsold)
   for (int i = 0; i < n; ++i) {
     rsold += r[i] * r[i];
   }
@@ -67,7 +66,7 @@ bool KruglovaAConjGradSleOMP::RunImpl() {
     MatrixVectorMultiply(a, p, ap, n);
 
     double p_ap = 0.0;
-#pragma omp parallel for reduction(+ : p_ap)
+#pragma omp parallel for default(none) shared(p, ap, n) reduction(+ : p_ap)
     for (int i = 0; i < n; ++i) {
       p_ap += p[i] * ap[i];
     }
@@ -78,15 +77,14 @@ bool KruglovaAConjGradSleOMP::RunImpl() {
 
     double alpha = rsold / p_ap;
 
-    // saxpy: x = x + alpha * p, r = r - alpha * Ap (параллельно)
-#pragma omp parallel for
+#pragma omp parallel for default(none) shared(x, r, ap, p, alpha, n)
     for (int i = 0; i < n; ++i) {
       x[i] += alpha * p[i];
       r[i] -= alpha * ap[i];
     }
 
     double rsnew = 0.0;
-#pragma omp parallel for reduction(+ : rsnew)
+#pragma omp parallel for default(none) shared(r, n) reduction(+ : rsnew)
     for (int i = 0; i < n; ++i) {
       rsnew += r[i] * r[i];
     }
@@ -95,11 +93,10 @@ bool KruglovaAConjGradSleOMP::RunImpl() {
       break;
     }
 
-    // p = r + beta * p
     double beta = rsnew / rsold;
-#pragma omp parallel for
+#pragma omp parallel for default(none) shared(p, r, beta, n)
     for (int i = 0; i < n; ++i) {
-      p[i] = r[i] + beta * p[i];
+      p[i] = r[i] + (beta * p[i]);
     }
     rsold = rsnew;
   }
