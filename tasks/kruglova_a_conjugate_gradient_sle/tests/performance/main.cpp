@@ -49,7 +49,7 @@ TEST_P(KruglovaAPerfTestAConjGradSle, RunPerfTask) {
 }
 
 namespace {
-
+//добавила
 const auto kAllPerfTasks = ppc::util::MakeAllPerfTasks<InType, KruglovaAConjGradSleSEQ, KruglovaAConjGradSleOMP
 
                                                        >(PPC_SETTINGS_kruglova_a_conjugate_gradient_sle);
