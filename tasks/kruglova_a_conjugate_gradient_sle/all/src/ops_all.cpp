@@ -19,9 +19,15 @@ KruglovaAConjGradSleALL::KruglovaAConjGradSleALL(const InType &in) {
 
 bool KruglovaAConjGradSleALL::ValidationImpl() {
   const auto &in = GetInput();
-  if (in.size <= 0) return false;
-  if (in.A.size() != static_cast<size_t>(in.size) * in.size) return false;
-  if (in.b.size() != static_cast<size_t>(in.size)) return false;
+  if (in.size <= 0) {
+    return false;
+  }
+  if (in.A.size() != static_cast<size_t>(in.size) * in.size) {
+    return false;
+  }
+  if (in.b.size() != static_cast<size_t>(in.size)) {
+    return false;
+  }
   return true;
 }
 
@@ -95,7 +101,9 @@ bool KruglovaAConjGradSleALL::RunImpl() {
     double p_ap = 0.0;
     MPI_Allreduce(&local_p_ap, &p_ap, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    if (std::abs(p_ap) < 1e-16) break;
+    if (std::abs(p_ap) < 1e-16) {
+      break;
+    }
 
     const double alpha = rsold / p_ap;
     double local_rsnew = 0.0;
@@ -110,7 +118,9 @@ bool KruglovaAConjGradSleALL::RunImpl() {
     double rsnew = 0.0;
     MPI_Allreduce(&local_rsnew, &rsnew, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    if (std::sqrt(rsnew) < tolerance) break;
+    if (std::sqrt(rsnew) < tolerance) {
+      break;
+    }
 
     const double beta = rsnew / rsold;
 
@@ -128,6 +138,8 @@ bool KruglovaAConjGradSleALL::RunImpl() {
   return true;
 }
 
-bool KruglovaAConjGradSleALL::PostProcessingImpl() { return true; }
+bool KruglovaAConjGradSleALL::PostProcessingImpl() {
+  return true;
+}
 
 }  // namespace kruglova_a_conjugate_gradient_sle
