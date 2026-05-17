@@ -30,12 +30,38 @@ void ComputeLocalMatVec(int local_n, int n, int offset, const InType &input, con
 #pragma omp parallel for default(none) shared(local_n, n, offset, input, p_full, local_ap)
   for (int i = 0; i < local_n; ++i) {
     double sum = 0.0;
-    size_t row_idx = static_cast<size_t>(offset + i) * static_cast<size_t>(n);
+    size_t row_idx = (static_cast<size_t>(offset) + i) * static_cast<size_t>(n);
     for (int j = 0; j < n; ++j) {
       sum += input.A[row_idx + static_cast<size_t>(j)] * p_full[j];
     }
     local_ap[i] = sum;
   }
+}
+
+double GlobalDot(int local_n, const std::vector<double> &v1, const std::vector<double> &v2) {
+  double local_sum = 0.0;
+#pragma omp parallel for default(none) shared(local_n, v1, v2) reduction(+ : local_sum)
+  for (int i = 0; i < local_n; ++i) {
+    local_sum += v1[i] * v2[i];
+  }
+  double global_sum = 0.0;
+  MPI_Allreduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  return global_sum;
+}
+
+double UpdateLocalXR(int local_n, double alpha, const std::vector<double> &local_p, const std::vector<double> &local_ap,
+                     std::vector<double> &local_x, std::vector<double> &local_r) {
+  double local_rsnew = 0.0;
+#pragma omp parallel for default(none) shared(local_n, alpha, local_p, local_ap, local_x, local_r) \
+    reduction(+ : local_rsnew)
+  for (int i = 0; i < local_n; ++i) {
+    local_x[i] += alpha * local_p[i];
+    local_r[i] -= alpha * local_ap[i];
+    local_rsnew += local_r[i] * local_r[i];
+  }
+  double global_rsnew = 0.0;
+  MPI_Allreduce(&local_rsnew, &global_rsnew, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  return global_rsnew;
 }
 
 }  // namespace
@@ -50,10 +76,11 @@ bool KruglovaAConjGradSleALL::ValidationImpl() {
   if (in.size <= 0) {
     return false;
   }
-  if (in.A.size() != static_cast<size_t>(in.size) * static_cast<size_t>(in.size)) {
+  size_t sz = static_cast<size_t>(in.size);
+  if (in.A.size() != sz * sz) {
     return false;
   }
-  if (in.b.size() != static_cast<size_t>(in.size)) {
+  if (in.b.size() != sz) {
     return false;
   }
   return true;
@@ -84,65 +111,42 @@ bool KruglovaAConjGradSleALL::RunImpl() {
   std::vector<double> local_x(local_n, 0.0);
   std::vector<double> p_full(n);
 
-  std::vector<int> send_counts(mpi_size);
+  std::vector<int> counts(mpi_size);
   std::vector<int> displs(mpi_size);
-  int q = n / mpi_size;
-  int rem = n % mpi_size;
   for (int i = 0; i < mpi_size; ++i) {
-    send_counts[i] = (i < rem) ? (q + 1) : q;
-    displs[i] = (i < rem) ? (i * (q + 1)) : ((i * q) + rem);
+    int ln = 0;
+    int off = 0;
+    CalculateDistribution(n, mpi_size, i, ln, off);
+    counts[i] = ln;
+    displs[i] = off;
   }
 
 #pragma omp parallel for default(none) shared(local_n, offset, local_r, local_p, input)
   for (int i = 0; i < local_n; ++i) {
-    local_r[i] = input.b[static_cast<size_t>(offset + i)];
+    local_r[i] = input.b[static_cast<size_t>(offset) + i];
     local_p[i] = local_r[i];
   }
 
-  double local_rsold = 0.0;
-#pragma omp parallel for default(none) shared(local_n, local_r) reduction(+ : local_rsold)
-  for (int i = 0; i < local_n; ++i) {
-    local_rsold += local_r[i] * local_r[i];
-  }
-  double rsold = 0.0;
-  MPI_Allreduce(&local_rsold, &rsold, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
+  double rsold = GlobalDot(local_n, local_r, local_r);
   const double tolerance = 1e-8;
+
   for (int iter = 0; iter < n; ++iter) {
-    MPI_Allgatherv(local_p.data(), local_n, MPI_DOUBLE, p_full.data(), send_counts.data(), displs.data(), MPI_DOUBLE,
+    MPI_Allgatherv(local_p.data(), local_n, MPI_DOUBLE, p_full.data(), counts.data(), displs.data(), MPI_DOUBLE,
                    MPI_COMM_WORLD);
 
     ComputeLocalMatVec(local_n, n, offset, input, p_full, local_ap);
 
-    double local_p_ap = 0.0;
-#pragma omp parallel for default(none) shared(local_n, local_p, local_ap) reduction(+ : local_p_ap)
-    for (int i = 0; i < local_n; ++i) {
-      local_p_ap += local_p[i] * local_ap[i];
-    }
-    double p_ap = 0.0;
-    MPI_Allreduce(&local_p_ap, &p_ap, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
+    double p_ap = GlobalDot(local_n, local_p, local_ap);
     if (std::abs(p_ap) < 1e-16) {
       break;
     }
 
-    const double alpha = rsold / p_ap;
-    double local_rsnew = 0.0;
-#pragma omp parallel for default(none) shared(local_n, local_x, local_p, local_r, local_ap, alpha) \
-    reduction(+ : local_rsnew)
-    for (int i = 0; i < local_n; ++i) {
-      local_x[i] += alpha * local_p[i];
-      local_r[i] -= alpha * local_ap[i];
-      local_rsnew += local_r[i] * local_r[i];
-    }
-
-    double rsnew = 0.0;
-    MPI_Allreduce(&local_rsnew, &rsnew, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    double rsnew = UpdateLocalXR(local_n, rsold / p_ap, local_p, local_ap, local_x, local_r);
     if (std::sqrt(rsnew) < tolerance) {
       break;
     }
 
-    const double beta = rsnew / rsold;
+    double beta = rsnew / rsold;
 #pragma omp parallel for default(none) shared(local_n, local_p, local_r, beta)
     for (int i = 0; i < local_n; ++i) {
       local_p[i] = local_r[i] + (beta * local_p[i]);
@@ -150,7 +154,7 @@ bool KruglovaAConjGradSleALL::RunImpl() {
     rsold = rsnew;
   }
 
-  MPI_Allgatherv(local_x.data(), local_n, MPI_DOUBLE, x_global.data(), send_counts.data(), displs.data(), MPI_DOUBLE,
+  MPI_Allgatherv(local_x.data(), local_n, MPI_DOUBLE, x_global.data(), counts.data(), displs.data(), MPI_DOUBLE,
                  MPI_COMM_WORLD);
   return true;
 }
