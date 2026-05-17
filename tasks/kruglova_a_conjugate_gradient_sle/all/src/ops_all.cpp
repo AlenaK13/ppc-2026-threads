@@ -76,7 +76,7 @@ bool KruglovaAConjGradSleALL::ValidationImpl() {
   if (in.size <= 0) {
     return false;
   }
-  size_t sz = static_cast<size_t>(in.size);
+  auto sz = static_cast<size_t>(in.size);
   if (in.A.size() != sz * sz) {
     return false;
   }
