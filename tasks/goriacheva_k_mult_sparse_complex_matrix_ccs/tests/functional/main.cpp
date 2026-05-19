@@ -10,9 +10,11 @@
 #include <tuple>
 #include <vector>
 
+#include "goriacheva_k_mult_sparse_complex_matrix_ccs/all/include/ops_all.hpp"
 #include "goriacheva_k_mult_sparse_complex_matrix_ccs/common/include/common.hpp"
 #include "goriacheva_k_mult_sparse_complex_matrix_ccs/omp/include/ops_omp.hpp"
 #include "goriacheva_k_mult_sparse_complex_matrix_ccs/seq/include/ops_seq.hpp"
+#include "goriacheva_k_mult_sparse_complex_matrix_ccs/stl/include/ops_stl.hpp"
 #include "goriacheva_k_mult_sparse_complex_matrix_ccs/tbb/include/ops_tbb.hpp"
 #include "util/include/func_test_util.hpp"
 #include "util/include/util.hpp"
@@ -117,6 +119,10 @@ const auto kTestTasksList = std::tuple_cat(ppc::util::AddFuncTask<GoriachevaKMul
                                            ppc::util::AddFuncTask<GoriachevaKMultSparseComplexMatrixCcsOMP, InType>(
                                                kTestParams, PPC_SETTINGS_goriacheva_k_mult_sparse_complex_matrix_ccs),
                                            ppc::util::AddFuncTask<GoriachevaKMultSparseComplexMatrixCcsTBB, InType>(
+                                               kTestParams, PPC_SETTINGS_goriacheva_k_mult_sparse_complex_matrix_ccs),
+                                           ppc::util::AddFuncTask<GoriachevaKMultSparseComplexMatrixCcsSTL, InType>(
+                                               kTestParams, PPC_SETTINGS_goriacheva_k_mult_sparse_complex_matrix_ccs),
+                                           ppc::util::AddFuncTask<GoriachevaKMultSparseComplexMatrixCcsALL, InType>(
                                                kTestParams, PPC_SETTINGS_goriacheva_k_mult_sparse_complex_matrix_ccs));
 
 const auto kGtestValues = ppc::util::ExpandToValues(kTestTasksList);
